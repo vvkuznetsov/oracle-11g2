@@ -1,0 +1,77 @@
+#!/bin/bash
+
+mount -t tmpfs shmfs -o size=4g /dev/shm || {
+  echo "It's Oracle server container, to work properly it requires --privileged=true key:"
+  exit 0
+}
+
+chown -R oracle:oinstall /u01/app/oracle /u01/app/oraInventory
+
+appStart () {
+  echo "The Oracle server is started."
+
+  while true; do
+    status=`ps -ef | grep tns | grep oracle`
+    pmon=`ps -ef | egrep pmon_$ORACLE_SID'\>' | grep -v grep`
+    if [ "$status" == "" ] || [ "$pmon" == "" ]
+    then
+      su -s /bin/bash oracle -c "lsnrctl start"
+      su -s /bin/bash oracle -c "sqlplus /nolog @?/config/scripts/startdb.sql"
+      su -s /bin/bash oracle -c "lsnrctl status"
+    fi
+    sleep 1m
+  done;
+}
+
+appInstall () {
+  if [ -f /app/setup/install ]; then
+    /app/setup/install && rm -rf /app/setup
+    # Post install script
+    $ORACLE_HOME/root.sh
+    echo "The Oracle server is installed."
+  else
+    echo "ERROR. The Oracle server is already installed, try app:create for database creation or app:start for run server."
+  fi
+}
+
+appHelp () {
+  echo "It's Oracle server container, to work properly it requires --privilege key."
+  echo "Also before you can start it, you should run container with 'app:install' command to actualy install server"
+  echo
+  echo "Available options:"
+  echo " app:install    - Install the oracle server."
+  echo " app:create     - Run script to create database, table... if you need it."
+  echo " app:start      - Starts the oracle server (default)."
+  echo " app:help       - Displays the help"
+  echo " [command]  - Execute the specified linux command eg. bash."
+}
+
+case "$1" in
+  app:start)
+    appStart
+    ;;
+  app:install)
+    appInstall
+    ;;
+  app:create)
+    appHelp
+    ;;
+  app:help)
+    appHelp
+    ;;
+  *)
+    if [ -x $1 ]; then
+      $1
+    else
+      prog=$(which $1)
+      if [ -n "${prog}" ] ; then
+        shift 1
+        $prog $@
+      else
+        appHelp
+      fi
+    fi
+    ;;
+esac
+
+exit 0
